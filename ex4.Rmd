@@ -197,7 +197,7 @@ write.csv(Newsubmission,"model.csv",row.names=F)
 
 #### <span style="color:darkorange">**results**</span>  
 model 1 - Random Forest:
-![selected result]
+![selected result](https://raw.githubusercontent.com/bareketk/Ex4/master/model1.PNG)
 
 model 2 - CART1:
-![second result]
+![second result](https://raw.githubusercontent.com/bareketk/Ex4/master/model2.PNG)
