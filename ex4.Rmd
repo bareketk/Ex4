@@ -1,0 +1,203 @@
+---
+title: <span style="color:darkmagenta">**Crowdflower Search Results Relevance - Ex4**</span>
+author: "Bareket Karif"
+date: "27 ·Ó‡È 2016"
+output: html_document
+---
+
+```{r set-options, cache=FALSE}
+options(width = 200)
+```
+
+  
+#### <span style="color:darkorange">**Install the packages**</span>  
+```{r include= TRUE}
+library(tm)
+library(SnowballC)
+library(readr)
+library(randomForest)
+library(party)
+library(caret)
+```  
+___  
+  
+
+#### <span style="color:darkorange">**Preprocessing - clean the data**</span>  
+#######Before compare and analyize the text, I use text mining to clean the text.
+This function allows me to remove numbers, capitalization, common words, punctuation.
+
+```{r include= TRUE}
+cleanCorpus <- function(toClean){
+  news_corpus <- VectorSource(toClean)
+  docs <- Corpus(news_corpus)
+  docs <- tm_map(docs,removePunctuation)
+  
+  for(j in seq(docs)){   
+    docs[[j]] <- gsub("/", " ", docs[[j]])   
+    docs[[j]] <- gsub("@", " ", docs[[j]])   
+    docs[[j]] <- gsub("\\|", " ", docs[[j]])
+    
+    #stemSentence function - reducing inflected (or sometimes derived) words to their word stem, base or root           form-generally a written word form
+    docs[[j]]<- strsplit(docs[[j]], "[[:blank:]]")[[1]]
+    docs[[j]]<- wordStem(docs[[j]], "english")
+    paste(docs[[j]], collapse=" ")
+  }
+  
+  docs <- tm_map(docs,removeNumbers)
+  docs <- tm_map(docs,tolower)
+  docs <- tm_map(docs, removeWords, stopwords("english"))
+  docs <- tm_map(docs, stemDocument)                #/delete
+  docs <- tm_map(docs, stripWhitespace)
+  docs <- tm_map(docs, PlainTextDocument) 
+  
+  return(docs)
+}
+```  
+___  
+    
+    
+#### <span style="color:darkorange">**Calculate score**</span>  
+Loading the data
+```{r include= TRUE}
+#Loading the data - train
+unzip("train.csv.zip")
+train <- read_csv("train.csv")
+
+#Loading the data - test
+unzip("test.csv.zip")
+test  <- read_csv("test.csv")
+```
+
+Preprocessing
+```{r include= TRUE}
+#Preprocessing - train
+train$median_relevance <- factor(train$median_relevance)
+
+train_query <- cleanCorpus(train$query)
+train_product_title <- cleanCorpus(train$product_title)
+train_product_description <- cleanCorpus(train$product_description)
+
+#Preprocessing - test
+test_query <- cleanCorpus(test$query)
+test_product_title <- cleanCorpus(test$product_title)
+test_product_description <- cleanCorpus(test$product_description)
+```
+
+create a document term matrix
+```{r include= TRUE}
+#create a document term matrix - train
+DTM_query_of_train <- DocumentTermMatrix(train_query, 
+                                         control = list(wordLengths=c(2,Inf),
+                                                        bounds = list(global = c(0, Inf)), 
+                                                        dictionary = NULL))
+DTM_title_of_train <- DocumentTermMatrix(train_product_title, 
+                                         control = list(wordLengths = c(2,Inf), 
+                                                        bounds = list(global = c(0, Inf)), 
+                                                        dictionary = Terms(DTM_query_of_train)))
+DTM_product_description_of_train <- DocumentTermMatrix(train_product_description, 
+                                                       control = list(wordLengths = c(2,Inf), 
+                                                        bounds = list(global = c(0, Inf)), 
+                                                        dictionary = Terms(DTM_query_of_train)))
+
+#create a document term matrix - test
+DTM_query_of_test <- DocumentTermMatrix(test_query, 
+                                        control = list(wordLengths=c(2,Inf),
+                                                       bounds = list(global = c(0, Inf)), 
+                                                       dictionary = NULL))
+DTM_title_of_test <- DocumentTermMatrix(test_product_title, 
+                                        control = list(wordLengths = c(2,Inf), 
+                                                       bounds = list(global = c(0, Inf)), 
+                                                       dictionary = Terms(DTM_query_of_test)))
+DTM_product_description_of_test <- DocumentTermMatrix(test_product_description, 
+                                                      control = list(wordLengths = c(2,Inf), 
+                                                      bounds = list(global = c(0, Inf)), 
+                                                      dictionary = Terms(DTM_query_of_test)))
+```
+
+sum of two matrices
+```{r include= TRUE}
+#sum of two matrices - train
+q_t_train<-as.matrix(DTM_query_of_train) + as.matrix(DTM_title_of_train)
+q_d_train<-as.matrix(DTM_query_of_train) + as.matrix(DTM_product_description_of_train)
+
+#sum of two matrices - test
+q_t_test<-as.matrix(DTM_query_of_test) + as.matrix(DTM_title_of_test)
+q_d_test<-as.matrix(DTM_query_of_test) + as.matrix(DTM_product_description_of_test)
+```
+
+count sum of two matrices
+0 - irrelevant
+1 - word that in one matrix and not in the second matrix
+2 - word that is in both matrices
+```{r include= TRUE}
+#count sum of two matrices - train
+q_t_train_one<-c()
+q_t_train_two<-c()
+
+q_d_train_one<-c()
+q_d_train_two<-c()
+
+for(i in seq(train$id)){
+  q_t_train_one[i]<-sum(q_t_train[i,] == 1)
+  q_t_train_two[i]<-sum(q_t_train[i,] >= 2)
+  
+  q_d_train_one[i]<-sum(q_d_train[i,] == 1)
+  q_d_train_two[i]<-sum(q_d_train[i,] >= 2)
+}
+
+##count sum of two matrices - test
+q_t_test_one<-c()
+q_t_test_two<-c()
+
+q_d_test_one<-c()
+q_d_test_two<-c()
+
+for(i in seq(test$id)){
+  q_t_test_one[i]<-sum(q_t_test[i,] == 1)
+  q_t_test_two[i]<-sum(q_t_test[i,] >= 2)
+  
+  q_d_test_one[i]<-sum(q_d_test[i,] == 1)
+  q_d_test_two[i]<-sum(q_d_test[i,] >= 2)
+}
+```
+
+calculate the new score
+```{r include= TRUE}
+#calculate the new score - train
+for(i in seq(train$id)){
+  train$score[i]<-(q_t_train_one[i]+q_d_train_one[i])/(q_t_train_two[i]+q_d_train_two[i]+1)
+}
+
+#calculate the new score - test
+for(i in seq(test$id)){
+  test$score[i]<-(q_t_test_one[i]+q_d_test_one[i])/(q_t_test_two[i]+q_d_test_two[i]+1)
+}
+```
+
+#### <span style="color:darkorange">**Model creation**</span>  
+#######Letís train a classification model based on the train set
+#######*Random Forest*
+```{r include= TRUE}
+model1 <- randomForest(median_relevance ~ score, data=train, ntree=3)
+```
+
+#######*CART1*
+```{r include= TRUE}
+model2 <- train(median_relevance ~ score, data = train,
+                method = "rpart",
+                trControl = trainControl(classProbs = F))
+```
+
+Classification for prediction
+```{r include= TRUE}
+results <- predict(model2, newdata = test)
+Newsubmission = data.frame(id=test$id, prediction = results)
+write.csv(Newsubmission,"model.csv",row.names=F)
+```
+
+#### <span style="color:darkorange">**results**</span>  
+model 1 - Random Forest:
+![selected result]
+
+model 2 - CART1:
+![second result]
